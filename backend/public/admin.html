@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Admin Page Builder</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: sans-serif; max-width: 800px; margin: 2rem auto; }
+    input, select, button, textarea { margin: 0.5em 0; display: block; }
+    .element { border: 1px solid #ccc; padding: 1em; margin-bottom: 1em; }
+    .actions { margin-top: 0.5em; }
+  </style>
+</head>
+<body>
+
+  <h1>Admin Page Builder</h1>
+  <button onclick="logout()">Logout</button>
+
+  <h2>Pages</h2>
+  <form id="pageForm">
+    <input type="hidden" id="pageId" />
+    <label>
+      Title:
+      <input type="text" id="pageTitle" required />
+    </label>
+    <button type="submit">Save Page</button>
+    <button type="button" onclick="resetPageForm()">Cancel</button>
+  </form>
+  <div id="pages"></div>
+
+  <div id="sectionsPanel" style="display:none;">
+    <h2>Sections for <span id="currentPageTitle"></span></h2>
+    <form id="sectionForm">
+      <input type="hidden" id="sectionIndex" />
+      <label>Scroll Start (px or %): <input type="number" id="scrollStart" required /></label>
+      <label>Start Location X: <input type="number" id="startX" required /></label>
+      <label>Start Location Y: <input type="number" id="startY" required /></label>
+      <label>End Location X: <input type="number" id="endX" required /></label>
+      <label>End Location Y: <input type="number" id="endY" required /></label>
+      <label>Transition Type:
+        <select id="transitionType">
+          <option value="move">Move</option>
+          <option value="fade">Fade In</option>
+          <option value="blur">Blur In</option>
+        </select>
+      </label>
+      <label>Transition Start (px or %): <input type="number" id="transitionStart" required /></label>
+      <label>Transition End (px or %): <input type="number" id="transitionEnd" required /></label>
+      <label>Content (Rich Text): <textarea id="sectionContent" required></textarea></label>
+      <label>Width Desktop (%): <input type="number" id="widthDesktop" min="1" max="100" required /></label>
+      <label>Width Tablet (%): <input type="number" id="widthTablet" min="1" max="100" required /></label>
+      <label>Width Mobile (%): <input type="number" id="widthMobile" min="1" max="100" required /></label>
+      <button type="submit">Save Section</button>
+      <button type="button" onclick="resetSectionForm()">Cancel</button>
+    </form>
+    <div id="sections"></div>
+    <button onclick="closeSectionsPanel()">Back to Pages</button>
+  </div>
+
+  <script>
+    let pages = [];
+    let currentPage = null;
+
+    async function fetchPages() {
+      const res = await fetch('/api/pages');
+      pages = await res.json();
+      renderPages();
+    }
+
+    function renderPages() {
+      const container = document.getElementById('pages');
+      container.innerHTML = '';
+      pages.forEach(page => {
+        const div = document.createElement('div');
+        div.className = 'element';
+        div.innerHTML = `<strong>${page.title}</strong> (pos: ${page.position || 0})<br>
+          <div class="actions">
+            <button onclick="editPage('${page._id}')">Edit</button>
+            <button onclick="deletePage('${page._id}')">Delete</button>
+            <button onclick="openSections('${page._id}')">Sections</button>
+          </div>`;
+        container.appendChild(div);
+      });
+    }
+
+    async function savePage(e) {
+      e.preventDefault();
+      const id = document.getElementById('pageId').value;
+      const data = {
+        title: document.getElementById('pageTitle').value,
+        position: 0 // can add position support later
+      };
+      if (id) {
+        await fetch(`/api/pages/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+      } else {
+        await fetch('/api/pages', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+      }
+      resetPageForm();
+      fetchPages();
+    }
+
+    async function editPage(id) {
+      const res = await fetch(`/api/pages/${id}`);
+      const page = await res.json();
+      document.getElementById('pageId').value = page._id;
+      document.getElementById('pageTitle').value = page.title;
+    }
+
+    async function deletePage(id) {
+      if (confirm('Delete this page?')) {
+        await fetch(`/api/pages/${id}`, { method: 'DELETE' });
+        fetchPages();
+      }
+    }
+
+    function resetPageForm() {
+      document.getElementById('pageForm').reset();
+      document.getElementById('pageId').value = '';
+    }
+
+    // Sections logic
+    function openSections(pageId) {
+      currentPage = pages.find(p => p._id === pageId);
+      document.getElementById('sectionsPanel').style.display = '';
+      document.getElementById('currentPageTitle').textContent = currentPage.title;
+      renderSections();
+    }
+
+    function closeSectionsPanel() {
+      document.getElementById('sectionsPanel').style.display = 'none';
+      currentPage = null;
+    }
+
+    function renderSections() {
+      const container = document.getElementById('sections');
+      container.innerHTML = '';
+      if (!currentPage || !currentPage.sections) return;
+      currentPage.sections.forEach((section, idx) => {
+        const div = document.createElement('div');
+        div.className = 'element';
+        div.innerHTML = `Section #${idx+1}<br>
+          Scroll Start: ${section.scrollStart}<br>
+          Start: (${section.startLocation.x}, ${section.startLocation.y})<br>
+          End: (${section.endLocation.x}, ${section.endLocation.y})<br>
+          Transition: ${section.transitionType} [${section.transitionStart} - ${section.transitionEnd}]<br>
+          Width: D:${section.widthDesktop}% T:${section.widthTablet}% M:${section.widthMobile}%<br>
+          <div class="actions">
+            <button onclick="editSection(${idx})">Edit</button>
+            <button onclick="deleteSection(${idx})">Delete</button>
+          </div>
+          <div><em>${section.content}</em></div>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    function resetSectionForm() {
+      document.getElementById('sectionForm').reset();
+      document.getElementById('sectionIndex').value = '';
+    }
+
+    async function saveSection(e) {
+      e.preventDefault();
+      if (!currentPage) return;
+      const idx = document.getElementById('sectionIndex').value;
+      const section = {
+        scrollStart: parseFloat(document.getElementById('scrollStart').value),
+        startLocation: {
+          x: parseFloat(document.getElementById('startX').value),
+          y: parseFloat(document.getElementById('startY').value)
+        },
+        endLocation: {
+          x: parseFloat(document.getElementById('endX').value),
+          y: parseFloat(document.getElementById('endY').value)
+        },
+        transitionType: document.getElementById('transitionType').value,
+        transitionStart: parseFloat(document.getElementById('transitionStart').value),
+        transitionEnd: parseFloat(document.getElementById('transitionEnd').value),
+        content: document.getElementById('sectionContent').value,
+        widthDesktop: parseInt(document.getElementById('widthDesktop').value, 10),
+        widthTablet: parseInt(document.getElementById('widthTablet').value, 10),
+        widthMobile: parseInt(document.getElementById('widthMobile').value, 10)
+      };
+      let sections = currentPage.sections || [];
+      if (idx === '' || idx === undefined) {
+        sections.push(section);
+      } else {
+        sections[parseInt(idx, 10)] = section;
+      }
+      await fetch(`/api/pages/${currentPage._id}`, {
+        method: 'PUT',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          title: currentPage.title,
+          sections,
+          position: currentPage.position || 0
+        })
+      });
+      // Refresh currentPage
+      const res = await fetch(`/api/pages/${currentPage._id}`);
+      currentPage = await res.json();
+      resetSectionForm();
+      renderSections();
+      fetchPages();
+    }
+
+    function editSection(idx) {
+      const section = currentPage.sections[idx];
+      document.getElementById('sectionIndex').value = idx;
+      document.getElementById('scrollStart').value = section.scrollStart;
+      document.getElementById('startX').value = section.startLocation.x;
+      document.getElementById('startY').value = section.startLocation.y;
+      document.getElementById('endX').value = section.endLocation.x;
+      document.getElementById('endY').value = section.endLocation.y;
+      document.getElementById('transitionType').value = section.transitionType;
+      document.getElementById('transitionStart').value = section.transitionStart;
+      document.getElementById('transitionEnd').value = section.transitionEnd;
+      document.getElementById('sectionContent').value = section.content;
+      document.getElementById('widthDesktop').value = section.widthDesktop;
+      document.getElementById('widthTablet').value = section.widthTablet;
+      document.getElementById('widthMobile').value = section.widthMobile;
+    }
+
+    async function deleteSection(idx) {
+      if (!currentPage) return;
+      if (!confirm('Delete this section?')) return;
+      let sections = currentPage.sections || [];
+      sections.splice(idx, 1);
+      await fetch(`/api/pages/${currentPage._id}`, {
+        method: 'PUT',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          title: currentPage.title,
+          sections,
+          position: currentPage.position || 0
+        })
+      });
+      // Refresh currentPage
+      const res = await fetch(`/api/pages/${currentPage._id}`);
+      currentPage = await res.json();
+      renderSections();
+      fetchPages();
+    }
+
+    function logout() {
+      window.location = '/logout';
+    }
+
+    document.getElementById('pageForm').addEventListener('submit', savePage);
+    document.getElementById('sectionForm').addEventListener('submit', saveSection);
+    fetchPages();
+  </script>
+</body>
+</html>
