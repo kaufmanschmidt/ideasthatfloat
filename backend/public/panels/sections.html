@@ -1,0 +1,265 @@
+<div>
+  <div style="display:flex;align-items:center;justify-content:space-between">
+    <h2 style="margin:0">Sections for <span id="sectionsPageTitle"></span></h2>
+    <button id="addSectionBtnTop">+ Add Section</button>
+  </div>
+  <div style="margin-top:0.5rem; display:flex; gap:0.5rem; align-items:center;">
+    <input id="pageTitleInput" placeholder="Edit page title" style="flex:1; padding:0.25rem;" />
+    <input id="pageSlugInput" placeholder="slug (optional)" style="width:180px; padding:0.25rem;" />
+    <button id="savePageTitleBtn">Save Page Title</button>
+    <button id="generatePageBtn" title="Generate a static HTML file into the frontend/ folder">Generate Page</button>
+  </div>
+
+  <div id="sectionFormContainer" style="display:none; margin-top:0.75rem; border:1px solid #eee; padding:1rem;">
+    <form id="sectionFormPanel">
+      <input type="hidden" id="sectionIndexPanel" />
+      <label>Scroll Start (px or %): <input type="number" id="scrollStartPanel" required /></label>
+      <label>Start Location X: <input type="number" id="startXPanel" required /></label>
+      <label>Start Location Y: <input type="number" id="startYPanel" required /></label>
+      <label>End Location X: <input type="number" id="endXPanel" required /></label>
+      <label>End Location Y: <input type="number" id="endYPanel" required /></label>
+      <label>Transition Type:
+        <select id="transitionTypePanel">
+          <option value="move">Move</option>
+          <option value="fade">Fade In</option>
+          <option value="blur">Blur In</option>
+        </select>
+      </label>
+      <label>Transition Start (px or %): <input type="number" id="transitionStartPanel" required /></label>
+      <label>Transition End (px or %): <input type="number" id="transitionEndPanel" required /></label>
+      <label>Content (Rich Text): <textarea id="sectionContentPanel" required></textarea></label>
+      <label>Width Desktop (%): <input type="number" id="widthDesktopPanel" min="1" max="100" required /></label>
+      <label>Width Tablet (%): <input type="number" id="widthTabletPanel" min="1" max="100" required /></label>
+      <label>Width Mobile (%): <input type="number" id="widthMobilePanel" min="1" max="100" required /></label>
+      <div style="margin-top:0.5rem;">
+        <button type="submit">Save Section</button>
+        <button type="button" id="cancelSectionBtn">Cancel</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="sectionsList" style="margin-top:1rem;"></div>
+  <div style="margin-top:0.5rem;"><button id="backToPagesBtn">Back to Pages</button></div>
+
+  <script>
+    // Panels/sections initializer
+    function panelInit_sections() {
+      // Ensure we have a current page object; pages panel should set window.currentPage
+      async function ensureCurrentPage() {
+        if (window.currentPage && window.currentPage._id) return window.currentPage;
+        // If a page id was set elsewhere (pages panel) or by detail loader, try fetching
+        const pid = window.pendingSectionsPageId || window.pendingDetailId;
+        if (pid) {
+          const res = await fetch(`/api/pages/${pid}`);
+          window.currentPage = await res.json();
+          // consume pendingDetailId so future panels know currentPage is set
+          window.pendingDetailId = null;
+          window.pendingSectionsPageId = null;
+          return window.currentPage;
+        }
+        return null;
+      }
+
+      function renderSections() {
+        const container = document.getElementById('sectionsList');
+        container.innerHTML = '';
+        if (!window.currentPage || !window.currentPage.sections) return;
+        window.currentPage.sections.forEach((section, idx) => {
+          const div = document.createElement('div');
+          div.className = 'element';
+          div.innerHTML = `<strong>Section #${idx+1}</strong><br>
+            Scroll Start: ${section.scrollStart}<br>
+            Start: (${section.startLocation.x}, ${section.startLocation.y})<br>
+            End: (${section.endLocation.x}, ${section.endLocation.y})<br>
+            Transition: ${section.transitionType} [${section.transitionStart} - ${section.transitionEnd}]<br>
+            Width: D:${section.widthDesktop}% T:${section.widthTablet}% M:${section.widthMobile}%<br>
+            <div class="actions">
+              <button data-action="move-up" data-idx="${idx}">↑</button>
+              <button data-action="move-down" data-idx="${idx}">↓</button>
+              <button data-action="edit" data-idx="${idx}">Edit</button>
+              <button data-action="delete" data-idx="${idx}">Delete</button>
+            </div>
+            <div><em>${section.content}</em></div>`;
+          container.appendChild(div);
+        });
+      }
+
+      async function saveSection(e) {
+        e.preventDefault();
+        if (!window.currentPage) return;
+        const idx = document.getElementById('sectionIndexPanel').value;
+        const section = {
+          scrollStart: parseFloat(document.getElementById('scrollStartPanel').value),
+          startLocation: { x: parseFloat(document.getElementById('startXPanel').value), y: parseFloat(document.getElementById('startYPanel').value) },
+          endLocation: { x: parseFloat(document.getElementById('endXPanel').value), y: parseFloat(document.getElementById('endYPanel').value) },
+          transitionType: document.getElementById('transitionTypePanel').value,
+          transitionStart: parseFloat(document.getElementById('transitionStartPanel').value),
+          transitionEnd: parseFloat(document.getElementById('transitionEndPanel').value),
+          content: document.getElementById('sectionContentPanel').value,
+          widthDesktop: parseInt(document.getElementById('widthDesktopPanel').value, 10),
+          widthTablet: parseInt(document.getElementById('widthTabletPanel').value, 10),
+          widthMobile: parseInt(document.getElementById('widthMobilePanel').value, 10)
+        };
+        let sections = window.currentPage.sections || [];
+        if (idx === '' || idx === undefined) sections.push(section); else sections[parseInt(idx,10)] = section;
+        const res = await fetch(`/api/pages/${window.currentPage._id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ title: window.currentPage.title, sections, position: window.currentPage.position || 0 }) });
+        window.currentPage = await res.json();
+        hideSectionForm(); renderSections();
+        // refresh pages list on the left/middle
+        if (typeof window.panelRefresh_pages === 'function') try { window.panelRefresh_pages(); } catch (e) { }
+      }
+
+      // Move section helper
+      async function moveSection(fromIdx, toIdx) {
+        if (!window.currentPage) return;
+        const sections = window.currentPage.sections || [];
+        if (toIdx < 0 || toIdx >= sections.length) return;
+        const item = sections.splice(fromIdx, 1)[0];
+        sections.splice(toIdx, 0, item);
+        const res = await fetch(`/api/pages/${window.currentPage._id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ title: window.currentPage.title, sections, position: window.currentPage.position || 0 }) });
+        window.currentPage = await res.json();
+        renderSections();
+        if (typeof window.panelRefresh_pages === 'function') try { window.panelRefresh_pages(); } catch (e) { }
+      }
+
+      function editSection(idx) {
+        const section = window.currentPage.sections[idx];
+        document.getElementById('sectionIndexPanel').value = idx;
+        document.getElementById('scrollStartPanel').value = section.scrollStart;
+        document.getElementById('startXPanel').value = section.startLocation.x;
+        document.getElementById('startYPanel').value = section.startLocation.y;
+        document.getElementById('endXPanel').value = section.endLocation.x;
+        document.getElementById('endYPanel').value = section.endLocation.y;
+        document.getElementById('transitionTypePanel').value = section.transitionType;
+        document.getElementById('transitionStartPanel').value = section.transitionStart;
+        document.getElementById('transitionEndPanel').value = section.transitionEnd;
+        document.getElementById('sectionContentPanel').value = section.content;
+        document.getElementById('widthDesktopPanel').value = section.widthDesktop;
+        document.getElementById('widthTabletPanel').value = section.widthTablet;
+        document.getElementById('widthMobilePanel').value = section.widthMobile;
+        showSectionForm(false);
+      }
+
+      async function deleteSection(idx) {
+        if (!window.currentPage) return; if (!confirm('Delete this section?')) return;
+        let sections = window.currentPage.sections || [];
+        sections.splice(idx, 1);
+        const res = await fetch(`/api/pages/${window.currentPage._id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ title: window.currentPage.title, sections, position: window.currentPage.position || 0 }) });
+        window.currentPage = await res.json(); renderSections();
+      }
+
+      function showSectionForm(isNew) {
+        document.getElementById('sectionFormContainer').style.display = '';
+        if (isNew) {
+          // sensible defaults to satisfy Mongoose validators
+          document.getElementById('sectionFormPanel').reset();
+          document.getElementById('sectionIndexPanel').value = '';
+          document.getElementById('scrollStartPanel').value = 0;
+          document.getElementById('startXPanel').value = 0;
+          document.getElementById('startYPanel').value = 0;
+          document.getElementById('endXPanel').value = 0;
+          document.getElementById('endYPanel').value = 0;
+          document.getElementById('transitionTypePanel').value = 'move';
+          document.getElementById('transitionStartPanel').value = 0;
+          document.getElementById('transitionEndPanel').value = 100;
+          document.getElementById('sectionContentPanel').value = '';
+          document.getElementById('widthDesktopPanel').value = 100;
+          document.getElementById('widthTabletPanel').value = 100;
+          document.getElementById('widthMobilePanel').value = 100;
+        }
+      }
+
+      function hideSectionForm() {
+        document.getElementById('sectionFormContainer').style.display = 'none';
+      }
+
+      // Wire up events
+      document.getElementById('sectionFormPanel').addEventListener('submit', saveSection);
+      document.getElementById('cancelSectionBtn').addEventListener('click', hideSectionForm);
+      document.getElementById('addSectionBtnTop').addEventListener('click', () => showSectionForm(true));
+      document.getElementById('backToPagesBtn').addEventListener('click', () => showTab('pages'));
+
+      // Save page title (with slug) - show errors and update slug input from server response
+      document.getElementById('savePageTitleBtn').addEventListener('click', async () => {
+        if (!window.currentPage) return alert('No page selected');
+        const newTitle = document.getElementById('pageTitleInput').value.trim();
+        if (!newTitle) return alert('Title cannot be empty');
+        let slug = document.getElementById('pageSlugInput').value.trim();
+        if (!slug) {
+          // auto-generate slug from title
+          slug = newTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+        }
+        try {
+          const res = await fetch(`/api/pages/${window.currentPage._id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ title: newTitle, slug, sections: window.currentPage.sections || [], position: window.currentPage.position || 0 }) });
+          const data = await res.json();
+          if (!res.ok) {
+            // show server-side error message when available
+            const msg = data && (data.error || data.message) ? (data.error || data.message) : `Status ${res.status}`;
+            return alert('Failed to save page: ' + msg);
+          }
+          // success - update local page and UI
+          window.currentPage = data;
+          document.getElementById('sectionsPageTitle').textContent = window.currentPage.title;
+          if (typeof window.panelRefresh_pages === 'function') try { window.panelRefresh_pages(); } catch (e) { }
+          document.getElementById('pageTitleInput').value = window.currentPage.title;
+          document.getElementById('pageSlugInput').value = window.currentPage.slug || '';
+        } catch (err) {
+          alert('Save failed: ' + err.message);
+        }
+      });
+
+      // Generate page into frontend folder
+      document.getElementById('generatePageBtn').addEventListener('click', async () => {
+        if (!window.currentPage) return alert('No page selected');
+        // basic validation: need a slug or title
+        const slugVal = (document.getElementById('pageSlugInput').value || '').trim();
+        const titleVal = (document.getElementById('pageTitleInput').value || '').trim();
+        if (!slugVal && !titleVal) return alert('Page needs a title or slug to generate a filename');
+        try {
+          const resp = await fetch(`/api/pages/${window.currentPage._id}/generate`, { method: 'POST' });
+          const data = await resp.json();
+          if (!resp.ok) return alert('Generate failed: ' + (data && (data.error || data.message) ? (data.error || data.message) : 'Unknown error'));
+          alert('Page generated: ' + data.path);
+        } catch (err) {
+          alert('Generate error: ' + err.message);
+        }
+      });
+
+      // Delegate clicks for edit/delete/move
+      document.getElementById('sectionsList').addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-action]');
+        if (!btn) return;
+        const action = btn.getAttribute('data-action');
+        const idx = parseInt(btn.getAttribute('data-idx'), 10);
+        if (action === 'edit') return editSection(idx);
+        if (action === 'delete') return deleteSection(idx);
+        if (action === 'move-up') return moveSection(idx, idx - 1);
+        if (action === 'move-down') return moveSection(idx, idx + 1);
+      });
+
+      // Expose refresh
+      window.panelRefresh_sections = async function() {
+        await ensureCurrentPage();
+        document.getElementById('sectionsPageTitle').textContent = window.currentPage ? window.currentPage.title : '';
+        document.getElementById('pageTitleInput').value = window.currentPage ? window.currentPage.title : '';
+        // ensure slug input reflects the saved slug (if any)
+        const slugInput = document.getElementById('pageSlugInput');
+        if (slugInput) slugInput.value = window.currentPage && window.currentPage.slug ? window.currentPage.slug : '';
+        renderSections();
+      };
+
+      // If there's a currentPage already set, render
+      (async () => {
+        await ensureCurrentPage();
+        if (window.currentPage) {
+          document.getElementById('sectionsPageTitle').textContent = window.currentPage.title;
+          document.getElementById('pageTitleInput').value = window.currentPage.title;
+          // populate slug input on initial load too
+          const slugInput = document.getElementById('pageSlugInput');
+          if (slugInput) slugInput.value = window.currentPage.slug || '';
+          renderSections();
+        }
+      })();
+    }
+  </script>
+</div>

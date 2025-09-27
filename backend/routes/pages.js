@@ -18,6 +18,25 @@ router.get('/:id', async (req, res) => {
 // Helper to generate static HTML for a page
 const fs = require('fs');
 const path = require('path');
+// helper to normalize slug
+function normalizeSlug(s) {
+  if (!s) return '';
+  return s.toString().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
+// ensure uniqueness by appending a numeric suffix if needed
+async function ensureUniqueSlug(base, idToIgnore) {
+  let slug = normalizeSlug(base);
+  let attempt = slug;
+  let i = 1;
+  while (true) {
+    const q = { slug: attempt };
+    if (idToIgnore) q._id = { $ne: idToIgnore };
+    const exists = await Page.findOne(q).lean();
+    if (!exists) return attempt;
+    attempt = `${slug}-${i++}`;
+  }
+}
 function generatePageHTML(page) {
   // Render sections as static HTML
   const sectionsHTML = (page.sections || []).map((section, idx) => {
@@ -91,15 +110,68 @@ function generatePageHTML(page) {
 
 function writePageFile(page) {
   const html = generatePageHTML(page);
-  const filename = page.title.replace(/\s+/g, '-').toLowerCase() + '.html';
-  const outPath = path.join(__dirname, '../frontend', filename);
-  fs.writeFileSync(outPath, html, 'utf8');
+  try {
+    const base = page.slug && page.slug.trim() ? page.slug.trim() : page.title;
+    const filename = base.replace(/\s+/g, '-').toLowerCase() + '.html';
+    // Write static pages to backend/public so they are served by Express
+    const outDir = path.join(__dirname, '..', 'public');
+    if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+    const outPath = path.join(outDir, filename);
+    fs.writeFileSync(outPath, html, 'utf8');
+  } catch (err) {
+    // Log and continue — static file generation is convenience, shouldn't block API
+    console.error('Failed to write static page file:', err.message);
+  }
 }
+
+// Generate the page into the frontend/ folder (for the client-facing site)
+async function generatePageToFrontend(page) {
+  if (!page) throw new Error('Page not provided');
+  // Determine filename base (prefer slug)
+  let base = '';
+  if (page.slug && page.slug.trim()) base = page.slug.trim();
+  else base = normalizeSlug(page.title) || `page-${Date.now()}`;
+  const filename = (base.replace(/\s+/g, '-').toLowerCase()) + '.html';
+
+  const html = generatePageHTML(page);
+  const outDir = path.join(__dirname, '..', '..', 'frontend');
+  if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+  const outPath = path.join(outDir, filename);
+  fs.writeFileSync(outPath, html, 'utf8');
+  return `/frontend/${filename}`;
+}
+
+router.post('/:id/generate', async (req, res) => {
+  try {
+    const page = await Page.findById(req.params.id).lean();
+    if (!page) return res.status(404).json({ error: 'Page not found' });
+    const pathRel = await generatePageToFrontend(page);
+    return res.json({ success: true, path: pathRel });
+  } catch (err) {
+    console.error('Failed to generate frontend page:', err);
+    return res.status(500).json({ error: err.message || 'Failed to generate page' });
+  }
+});
+
+// Convenience GET endpoint for quick testing in browser
+router.get('/:id/generate', async (req, res) => {
+  try {
+    const page = await Page.findById(req.params.id).lean();
+    if (!page) return res.status(404).send('Page not found');
+    const pathRel = await generatePageToFrontend(page);
+    res.send(`Generated: ${pathRel}`);
+  } catch (err) {
+    console.error('Failed to generate frontend page (GET):', err);
+    res.status(500).send('Failed to generate page: ' + (err.message || 'unknown error'));
+  }
+});
 
 // Create a new page
 router.post('/', async (req, res) => {
-  const { title, sections, position } = req.body;
-  const page = new Page({ title, sections, position });
+  const { title, slug: rawSlug, sections, position } = req.body;
+  const slug = rawSlug ? normalizeSlug(rawSlug) : normalizeSlug(title);
+  const uniqueSlug = await ensureUniqueSlug(slug);
+  const page = new Page({ title, slug: uniqueSlug, sections, position });
   await page.save();
   writePageFile(page);
   res.status(201).json(page);
@@ -107,10 +179,12 @@ router.post('/', async (req, res) => {
 
 // Update a page
 router.put('/:id', async (req, res) => {
-  const { title, sections, position } = req.body;
+  const { title, slug: rawSlug, sections, position } = req.body;
+  const slugCandidate = rawSlug ? normalizeSlug(rawSlug) : normalizeSlug(title);
+  const uniqueSlug = await ensureUniqueSlug(slugCandidate, req.params.id);
   const page = await Page.findByIdAndUpdate(
     req.params.id,
-    { title, sections, position },
+    { title, slug: uniqueSlug, sections, position },
     { new: true }
   );
   if (!page) return res.status(404).json({ error: 'Page not found' });
@@ -123,9 +197,13 @@ router.delete('/:id', async (req, res) => {
   const page = await Page.findByIdAndDelete(req.params.id);
   if (!page) return res.status(404).json({ error: 'Page not found' });
   // Remove the static file
-  const filename = page.title.replace(/\s+/g, '-').toLowerCase() + '.html';
-  const outPath = path.join(__dirname, '../frontend', filename);
-  if (fs.existsSync(outPath)) fs.unlinkSync(outPath);
+  try {
+    const filename = page.title.replace(/\s+/g, '-').toLowerCase() + '.html';
+    const outPath = path.join(__dirname, '..', 'public', filename);
+    if (fs.existsSync(outPath)) fs.unlinkSync(outPath);
+  } catch (err) {
+    console.error('Failed to remove static page file:', err.message);
+  }
   res.json({ success: true });
 });
 

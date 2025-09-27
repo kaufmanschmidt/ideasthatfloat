@@ -26,10 +26,19 @@ const SectionSchema = new mongoose.Schema({
 const PageSchema = new mongoose.Schema(
   {
     title: { type: String, required: true },
+    slug: {
+      type: String,
+      lowercase: true,
+      trim: true,
+      match: [/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Slug may only contain lowercase letters, numbers and single dashes between words']
+    },
     sections: [SectionSchema],
     position: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
+
+// Create a sparse unique index on slug
+PageSchema.index({ slug: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('Page', PageSchema);

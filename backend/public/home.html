@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Home</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { margin: 0; font-family: sans-serif; }
+    .section { position: relative; margin: 2em auto; transition: all 0.5s; overflow: hidden; }
+    .section-content { padding: 2em; background: #fff; border-radius: 8px; box-shadow: 0 2px 8px #0001; }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+</head>
+<body>
+  <div id="page">
+    <div class="section" id="section-0" style="width:100%">
+      <div class="section-content">Home page section 1</div>
+    </div>
+  </div>
+  <script>
+    const sections = [{"startLocation":{"x":0,"y":0},"endLocation":{"x":0,"y":0},"scrollStart":0,"transitionType":"move","transitionStart":0,"transitionEnd":100,"content":"Home page section 1","widthDesktop":100,"widthTablet":100,"widthMobile":100,"_id":"68d831d2505eb13e3aca2ac0"}];
+    function getWidth(section) {
+      const w = window.innerWidth;
+      if (w < 600) return section.widthMobile;
+      if (w < 900) return section.widthTablet;
+      return section.widthDesktop;
+    }
+    function updateSectionWidths() {
+      sections.forEach((section, idx) => {
+        const el = document.getElementById('section-' + idx);
+        if (el) el.style.width = getWidth(section) + '%';
+      });
+    }
+    function setupGSAP(sections) {
+      gsap.registerPlugin(ScrollTrigger);
+      sections.forEach((section, idx) => {
+        const el = document.getElementById('section-' + idx);
+        let anim = { };
+        let from = { x: section.startLocation.x, y: section.startLocation.y, opacity: 1, filter: 'none' };
+        let to = { x: section.endLocation.x, y: section.endLocation.y, opacity: 1, filter: 'none' };
+        if (section.transitionType === 'fade') {
+          from.opacity = 0;
+          to.opacity = 1;
+        } else if (section.transitionType === 'blur') {
+          from.filter = 'blur(10px)';
+          to.filter = 'blur(0px)';
+        }
+        anim = { ...to, scrollTrigger: {
+          trigger: el,
+          start: 'top+' + section.scrollStart + ' top',
+          end: 'top+' + section.transitionEnd + ' top',
+          scrub: true
+        }};
+        gsap.fromTo(el, from, anim);
+      });
+    }
+    window.addEventListener('resize', updateSectionWidths);
+    setupGSAP(sections);
+    updateSectionWidths();
+  </script>
+</body>
+</html>

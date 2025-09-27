@@ -12,243 +12,143 @@
   </style>
 </head>
 <body>
+  <header style="margin-bottom:1rem;">
+    <h1 style="margin:0;">Admin</h1>
+  </header>
 
-  <h1>Admin Page Builder</h1>
-  <button onclick="logout()">Logout</button>
+  <main>
+    <!-- 3-column layout: left nav (20%), middle list/panel (30%), right detail manager (50%) -->
+    <div id="adminColumns" style="display:flex; gap:1rem;">
+      <!-- left nav column -->
+      <aside id="leftNav" style="width:20%;">
+        <div style="position:sticky; top:1rem;">
+          <h3>Navigation</h3>
+          <ul style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:0.5rem;">
+            <li><a href="#" onclick="showTab('admin');return false">Admin Home</a></li>
+            <li><a href="#" onclick="showTab('menu');return false">Menu</a></li>
+            <li><a href="#" onclick="showTab('pages');return false">Pages</a></li>
+            <li><a href="#" onclick="showTab('settings');return false">Settings</a></li>
+            <li><a href="#" onclick="showTab('account');return false">Account</a></li>
+            <li><a href="#" onclick="logout();return false">Logout</a></li>
+          </ul>
+        </div>
+      </aside>
 
-  <h2>Pages</h2>
-  <form id="pageForm">
-    <input type="hidden" id="pageId" />
-    <label>
-      Title:
-      <input type="text" id="pageTitle" required />
-    </label>
-    <button type="submit">Save Page</button>
-    <button type="button" onclick="resetPageForm()">Cancel</button>
-  </form>
-  <div id="pages"></div>
+      <!-- middle panel: list or panel overview (30%) -->
+      <section id="listPanel" style="width:30%; min-height:400px; border-left:1px solid #eee; padding-left:1rem;"></section>
 
-  <div id="sectionsPanel" style="display:none;">
-    <h2>Sections for <span id="currentPageTitle"></span></h2>
-    <form id="sectionForm">
-      <input type="hidden" id="sectionIndex" />
-      <label>Scroll Start (px or %): <input type="number" id="scrollStart" required /></label>
-      <label>Start Location X: <input type="number" id="startX" required /></label>
-      <label>Start Location Y: <input type="number" id="startY" required /></label>
-      <label>End Location X: <input type="number" id="endX" required /></label>
-      <label>End Location Y: <input type="number" id="endY" required /></label>
-      <label>Transition Type:
-        <select id="transitionType">
-          <option value="move">Move</option>
-          <option value="fade">Fade In</option>
-          <option value="blur">Blur In</option>
-        </select>
-      </label>
-      <label>Transition Start (px or %): <input type="number" id="transitionStart" required /></label>
-      <label>Transition End (px or %): <input type="number" id="transitionEnd" required /></label>
-      <label>Content (Rich Text): <textarea id="sectionContent" required></textarea></label>
-      <label>Width Desktop (%): <input type="number" id="widthDesktop" min="1" max="100" required /></label>
-      <label>Width Tablet (%): <input type="number" id="widthTablet" min="1" max="100" required /></label>
-      <label>Width Mobile (%): <input type="number" id="widthMobile" min="1" max="100" required /></label>
-      <button type="submit">Save Section</button>
-      <button type="button" onclick="resetSectionForm()">Cancel</button>
-    </form>
-    <div id="sections"></div>
-    <button onclick="closeSectionsPanel()">Back to Pages</button>
-  </div>
+      <!-- right panel: detail / item management (50%) -->
+      <section id="detailPanel" style="width:50%; min-height:400px; border-left:1px solid #eee; padding-left:1rem;"></section>
+    </div>
+  </main>
 
   <script>
-    let pages = [];
-    let currentPage = null;
-
-    async function fetchPages() {
-      const res = await fetch('/api/pages');
-      pages = await res.json();
-      renderPages();
-    }
-
-    function renderPages() {
-      const container = document.getElementById('pages');
-      container.innerHTML = '';
-      pages.forEach(page => {
-        const div = document.createElement('div');
-        div.className = 'element';
-        div.innerHTML = `<strong>${page.title}</strong> (pos: ${page.position || 0})<br>
-          <div class="actions">
-            <button onclick="editPage('${page._id}')">Edit</button>
-            <button onclick="deletePage('${page._id}')">Delete</button>
-            <button onclick="openSections('${page._id}')">Sections</button>
-          </div>`;
-        container.appendChild(div);
-      });
-    }
-
-    async function savePage(e) {
-      e.preventDefault();
-      const id = document.getElementById('pageId').value;
-      const data = {
-        title: document.getElementById('pageTitle').value,
-        position: 0 // can add position support later
-      };
-      if (id) {
-        await fetch(`/api/pages/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
-      } else {
-        await fetch('/api/pages', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
-      }
-      resetPageForm();
-      fetchPages();
-    }
-
-    async function editPage(id) {
-      const res = await fetch(`/api/pages/${id}`);
-      const page = await res.json();
-      document.getElementById('pageId').value = page._id;
-      document.getElementById('pageTitle').value = page.title;
-    }
-
-    async function deletePage(id) {
-      if (confirm('Delete this page?')) {
-        await fetch(`/api/pages/${id}`, { method: 'DELETE' });
-        fetchPages();
-      }
-    }
-
-    function resetPageForm() {
-      document.getElementById('pageForm').reset();
-      document.getElementById('pageId').value = '';
-    }
-
-    // Sections logic
-    function openSections(pageId) {
-      currentPage = pages.find(p => p._id === pageId);
-      document.getElementById('sectionsPanel').style.display = '';
-      document.getElementById('currentPageTitle').textContent = currentPage.title;
-      renderSections();
-    }
-
-    function closeSectionsPanel() {
-      document.getElementById('sectionsPanel').style.display = 'none';
-      currentPage = null;
-    }
-
-    function renderSections() {
-      const container = document.getElementById('sections');
-      container.innerHTML = '';
-      if (!currentPage || !currentPage.sections) return;
-      currentPage.sections.forEach((section, idx) => {
-        const div = document.createElement('div');
-        div.className = 'element';
-        div.innerHTML = `Section #${idx+1}<br>
-          Scroll Start: ${section.scrollStart}<br>
-          Start: (${section.startLocation.x}, ${section.startLocation.y})<br>
-          End: (${section.endLocation.x}, ${section.endLocation.y})<br>
-          Transition: ${section.transitionType} [${section.transitionStart} - ${section.transitionEnd}]<br>
-          Width: D:${section.widthDesktop}% T:${section.widthTablet}% M:${section.widthMobile}%<br>
-          <div class="actions">
-            <button onclick="editSection(${idx})">Edit</button>
-            <button onclick="deleteSection(${idx})">Delete</button>
-          </div>
-          <div><em>${section.content}</em></div>
-        `;
-        container.appendChild(div);
-      });
-    }
-
-    function resetSectionForm() {
-      document.getElementById('sectionForm').reset();
-      document.getElementById('sectionIndex').value = '';
-    }
-
-    async function saveSection(e) {
-      e.preventDefault();
-      if (!currentPage) return;
-      const idx = document.getElementById('sectionIndex').value;
-      const section = {
-        scrollStart: parseFloat(document.getElementById('scrollStart').value),
-        startLocation: {
-          x: parseFloat(document.getElementById('startX').value),
-          y: parseFloat(document.getElementById('startY').value)
-        },
-        endLocation: {
-          x: parseFloat(document.getElementById('endX').value),
-          y: parseFloat(document.getElementById('endY').value)
-        },
-        transitionType: document.getElementById('transitionType').value,
-        transitionStart: parseFloat(document.getElementById('transitionStart').value),
-        transitionEnd: parseFloat(document.getElementById('transitionEnd').value),
-        content: document.getElementById('sectionContent').value,
-        widthDesktop: parseInt(document.getElementById('widthDesktop').value, 10),
-        widthTablet: parseInt(document.getElementById('widthTablet').value, 10),
-        widthMobile: parseInt(document.getElementById('widthMobile').value, 10)
-      };
-      let sections = currentPage.sections || [];
-      if (idx === '' || idx === undefined) {
-        sections.push(section);
-      } else {
-        sections[parseInt(idx, 10)] = section;
-      }
-      await fetch(`/api/pages/${currentPage._id}`, {
-        method: 'PUT',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({
-          title: currentPage.title,
-          sections,
-          position: currentPage.position || 0
-        })
-      });
-      // Refresh currentPage
-      const res = await fetch(`/api/pages/${currentPage._id}`);
-      currentPage = await res.json();
-      resetSectionForm();
-      renderSections();
-      fetchPages();
-    }
-
-    function editSection(idx) {
-      const section = currentPage.sections[idx];
-      document.getElementById('sectionIndex').value = idx;
-      document.getElementById('scrollStart').value = section.scrollStart;
-      document.getElementById('startX').value = section.startLocation.x;
-      document.getElementById('startY').value = section.startLocation.y;
-      document.getElementById('endX').value = section.endLocation.x;
-      document.getElementById('endY').value = section.endLocation.y;
-      document.getElementById('transitionType').value = section.transitionType;
-      document.getElementById('transitionStart').value = section.transitionStart;
-      document.getElementById('transitionEnd').value = section.transitionEnd;
-      document.getElementById('sectionContent').value = section.content;
-      document.getElementById('widthDesktop').value = section.widthDesktop;
-      document.getElementById('widthTablet').value = section.widthTablet;
-      document.getElementById('widthMobile').value = section.widthMobile;
-    }
-
-    async function deleteSection(idx) {
-      if (!currentPage) return;
-      if (!confirm('Delete this section?')) return;
-      let sections = currentPage.sections || [];
-      sections.splice(idx, 1);
-      await fetch(`/api/pages/${currentPage._id}`, {
-        method: 'PUT',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({
-          title: currentPage.title,
-          sections,
-          position: currentPage.position || 0
-        })
-      });
-      // Refresh currentPage
-      const res = await fetch(`/api/pages/${currentPage._id}`);
-      currentPage = await res.json();
-      renderSections();
-      fetchPages();
-    }
-
+    // Minimal admin-level helpers only. Panel-specific logic lives inside each panel.
     function logout() {
       window.location = '/logout';
     }
 
-    document.getElementById('pageForm').addEventListener('submit', savePage);
-    document.getElementById('sectionForm').addEventListener('submit', saveSection);
-    fetchPages();
+    // Track which panel is currently loaded in the list column so we can swap reliably
+    let currentListTab = null;
+    function showTab(tab) {
+      const el = document.getElementById('listPanel');
+      const detailEl = document.getElementById('detailPanel');
+      // Clear detail column whenever navigation changes
+      if (detailEl) detailEl.innerHTML = '';
+      if (!el) return;
+      // If the requested tab is already active, call its refresh function if one exists
+      if (currentListTab === tab) {
+        const refreshFn = window[`panelRefresh_${tab}`];
+        if (typeof refreshFn === 'function') {
+          try { refreshFn(); } catch (err) { console.error('panel refresh error', err); }
+        }
+        return;
+      }
+      // Otherwise load/replace the list panel with the requested tab
+      currentListTab = tab;
+      el.innerHTML = ''; // clear
+      fetch(`/panels/${tab}.html`)
+        .then(r => r.text())
+        .then(html => {
+          const tmp = document.createElement('div');
+          tmp.innerHTML = html;
+          Array.from(tmp.childNodes).forEach(node => {
+            if (node.tagName && node.tagName.toLowerCase() === 'script') return;
+            el.appendChild(node.cloneNode(true));
+          });
+          const scripts = Array.from(tmp.querySelectorAll('script'));
+          function runScripts(i) {
+            if (i >= scripts.length) {
+              const initFn = window[`panelInit_${tab}`];
+              if (typeof initFn === 'function') {
+                try { initFn(); } catch (err) { console.error('panel init error', err); }
+              }
+              return;
+            }
+            const s = scripts[i];
+            const newScript = document.createElement('script');
+            if (s.src) {
+              newScript.src = s.src;
+              newScript.onload = () => runScripts(i + 1);
+              newScript.onerror = () => runScripts(i + 1);
+              document.body.appendChild(newScript);
+            } else {
+              try { newScript.text = s.textContent; document.body.appendChild(newScript); } catch (e) { try { eval(s.textContent); } catch (err) { console.error('script eval error', err); } }
+              runScripts(i + 1);
+            }
+          }
+          runScripts(0);
+        })
+        .catch(err => { el.innerHTML = '<p>Failed to load panel.</p>'; console.error(err); });
+    }
+
+    // Load a management/detail panel into the right-side detail column.
+    function loadDetail(panel, id) {
+      const el = document.getElementById('detailPanel');
+      if (!el) return;
+      // expose the id to the panel initializer as soon as possible
+      window.pendingDetailId = id;
+      // Clear existing detail content each time
+      el.innerHTML = '';
+      fetch(`/panels/${panel}.html`)
+        .then(r => r.text())
+        .then(html => {
+          const tmp = document.createElement('div');
+          tmp.innerHTML = html;
+          Array.from(tmp.childNodes).forEach(node => {
+            if (node.tagName && node.tagName.toLowerCase() === 'script') return;
+            el.appendChild(node.cloneNode(true));
+          });
+          const scripts = Array.from(tmp.querySelectorAll('script'));
+          function runScripts(i) {
+            if (i >= scripts.length) {
+              // expose the id to the panel initializer as needed
+              window.pendingDetailId = id;
+              const initFn = window[`panelInit_${panel}`];
+              if (typeof initFn === 'function') {
+                try { initFn(); } catch (err) { console.error('detail panel init error', err); }
+              }
+              return;
+            }
+            const s = scripts[i];
+            const newScript = document.createElement('script');
+            if (s.src) {
+              newScript.src = s.src;
+              newScript.onload = () => runScripts(i + 1);
+              newScript.onerror = () => runScripts(i + 1);
+              document.body.appendChild(newScript);
+            } else {
+              try { newScript.text = s.textContent; document.body.appendChild(newScript); } catch (e) { try { eval(s.textContent); } catch (err) { console.error('script eval error', err); } }
+              runScripts(i + 1);
+            }
+          }
+          runScripts(0);
+        })
+        .catch(err => { el.innerHTML = '<p>Failed to load detail panel.</p>'; console.error(err); });
+    }
+
+    // Kick things off: show the pages panel. The panel's own initializer will fetch and render pages.
+    showTab('pages');
   </script>
 </body>
 </html>

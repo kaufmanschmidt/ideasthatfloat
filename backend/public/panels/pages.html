@@ -1,0 +1,140 @@
+<div>
+  <div style="display:flex;align-items:center;justify-content:space-between">
+    <h2 style="margin:0">Pages</h2>
+    <button id="addPageBtn" onclick="showPageForm(true)">+ Add New Page</button>
+  </div>
+
+  <div id="pageFormContainer" style="margin-top:1rem; display:none; border:1px solid #eee; padding:1rem;">
+    <form id="pageForm">
+      <input type="hidden" id="pageId" />
+      <label>
+        Title:
+        <input type="text" id="pageTitle" required />
+      </label>
+      <div style="margin-top:0.5rem;">
+        <button type="submit">Save Page</button>
+        <button type="button" onclick="hidePageForm()">Cancel</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="pages" style="margin-top:1rem;"></div>
+
+  <!-- Sections are handled in a separate panel (panels/sections.html) -->
+
+  <script>
+    // Panel initializer - admin loader will call this after injection
+    function panelInit_pages() {
+      window.pages = window.pages || [];
+      window.currentPage = window.currentPage || null;
+
+      async function fetchPages() {
+        const res = await fetch('/api/pages');
+        window.pages = await res.json();
+        renderPages();
+      }
+
+      function renderPages() {
+        const container = document.getElementById('pages');
+        container.innerHTML = '';
+        window.pages.forEach(page => {
+          const div = document.createElement('div');
+          div.className = 'element';
+          div.innerHTML = `<strong>${page.title}</strong> (pos: ${page.position || 0})<br>
+            <div class="actions">
+              <button onclick="openSections('${page._id}')">Edit</button>
+              <button onclick="deletePage('${page._id}')">Delete</button>
+            </div>`;
+          container.appendChild(div);
+        });
+      }
+
+      async function savePage(e) {
+        e.preventDefault();
+        const id = document.getElementById('pageId').value;
+        const data = { title: document.getElementById('pageTitle').value, position: 0 };
+        if (id) {
+          await fetch(`/api/pages/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+        } else {
+          await fetch('/api/pages', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+        }
+        resetPageForm();
+        fetchPages();
+      }
+
+      async function editPage(id) {
+        // prepare the pending id so the detail panel can fetch it reliably
+        window.pendingDetailId = id;
+        window.pendingSectionsPageId = id;
+        window.currentPage = null;
+        // load the page management UI into the right detail column
+        if (typeof window.loadDetail === 'function') {
+          window.loadDetail('pages', id);
+          return;
+        }
+        const res = await fetch(`/api/pages/${id}`);
+        const page = await res.json();
+        document.getElementById('pageId').value = page._id;
+        document.getElementById('pageTitle').value = page.title;
+        showPageForm(false);
+      }
+
+      async function deletePage(id) {
+        if (confirm('Delete this page?')) {
+          await fetch(`/api/pages/${id}`, { method: 'DELETE' });
+          fetchPages();
+        }
+      }
+
+      function resetPageForm() {
+        document.getElementById('pageForm').reset();
+        document.getElementById('pageId').value = '';
+        hidePageForm();
+      }
+
+      function showPageForm(isNew) {
+        document.getElementById('pageFormContainer').style.display = '';
+        if (isNew) {
+          document.getElementById('pageForm').reset();
+          document.getElementById('pageId').value = '';
+        }
+        showTab('pages');
+      }
+
+      function hidePageForm() {
+        document.getElementById('pageFormContainer').style.display = 'none';
+      }
+
+      // Sections logic (uses window.currentPage)
+      function openSections(pageId) {
+        // prepare the pending id and clear currentPage so the sections panel will fetch fresh
+        window.pendingDetailId = pageId;
+        window.pendingSectionsPageId = pageId;
+        window.currentPage = null;
+        // open the sections management UI in the right detail column
+        if (typeof window.loadDetail === 'function') {
+          window.loadDetail('sections', pageId);
+          return;
+        }
+        showTab('sections');
+      }
+
+      function closeSectionsPanel() {
+        // handled by the sections panel; no DOM here in pages panel
+        window.currentPage = null;
+      }
+
+    // Wire up events
+    document.getElementById('pageForm').addEventListener('submit', savePage);
+    // Expose useful functions globally so inline onclick handlers and external callers work
+    window.panelRefresh_pages = fetchPages;
+    window.deletePage = deletePage;
+    window.openSections = openSections;
+    window.resetPageForm = resetPageForm;
+    window.showPageForm = showPageForm;
+    window.hidePageForm = hidePageForm;
+    window.panelCloseSections = closeSectionsPanel;
+    fetchPages();
+    }
+  </script>
+</div>
